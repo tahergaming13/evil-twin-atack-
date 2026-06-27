@@ -8,7 +8,7 @@
 
 // ==================== CONFIGURATION ====================
 // Telegram settings
-const String TELEGRAM_BOT_TOKEN = "8663145419:AAESffhsPb8rJgMXXyR_HLDwlPfKsoDA16w";
+const String TELEGRAM_BOT_TOKEN = "xxxx";
 const String TELEGRAM_CHAT_ID = "6705271882";
 const bool ENABLE_TELEGRAM = true ;
 
